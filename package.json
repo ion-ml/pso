@@ -1,0 +1,16 @@
+{
+  "name": "pso",
+  "version": "0.1.0",
+  "author": "Joe Strachan",
+  "scripts": {
+    "lint": "./node_modules/.bin/eslint ./src/**/*.js",
+    "pso": "node ./src/index.js",
+    "test": "nyc ./node_modules/.bin/mocha ./test/**/*"
+  },
+  "dependencies": {
+    "chai": "^4.2.0",
+    "eslint": "^5.10.0",
+    "mocha": "^5.2.0",
+    "nyc": "^13.1.0"
+  }
+}
