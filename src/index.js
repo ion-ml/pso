@@ -1,15 +1,7 @@
-const pso = require('./pso');
-const { log } = console;
+const Particle = require('particle');
+const Pso = require('./pso');
 
-const results = pso({
-  cognitiveWeight: 2,
-  inertia: 0.3,
-  lowerBound: 0,
-  numDimensions: 2,
-  numParticles: 10,
-  numIterations: 100,
-  socialWeight: 2,
-  upperBound: 10,
-});
-
-log(results);
+module.exports = {
+  Particle: Particle,
+  Pso: Pso,
+};

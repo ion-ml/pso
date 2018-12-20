@@ -1,43 +1,101 @@
-const constants = require('./constants');
-const swarm = require('./swarm');
+const Particle = require('./particle');
 
-const {
-  COGNITIVE_WEIGHT_DEFAULT,
-  NUM_DIMENSIONS_DEFAULT,
-  NUM_PARTICLES_DEFAULT,
-  SOCIAL_WEIGHT_DEFAULT,
-} = constants;
-
-const { Swarm } = swarm;
-
-const pso = ({
-  cognitiveWeight = COGNITIVE_WEIGHT_DEFAULT,
-  inertia,
-  lowerBound,
-  numDimensions = NUM_DIMENSIONS_DEFAULT,
-  numParticles = NUM_PARTICLES_DEFAULT,
-  numIterations,
-  socialWeight = SOCIAL_WEIGHT_DEFAULT,
-  upperBound,
-}) => {
-  const results = [];
-  const swarm = new Swarm({
-    cognitiveWeight,
-    inertia,
-    lowerBound,
-    numDimensions,
-    numParticles,
-    numIterations,
-    socialWeight,
-    upperBound
-  });
-
-  for (var i = 0; i < numIterations; i++) {
-    swarm.update();
-    results.push(swarm.findGlobalBestParticle().fitness);
+class Pso
+{
+  get fitnessFunction() {
+    return this._fitnessFunction;
   }
 
-  return results;
-};
+  get globalBest() {
+    return this._globalBest;
+  }
 
-module.exports = pso;
+  get globalBests() {
+    return this._globalBests;
+  }
+
+  get numIterations() {
+    return this._numIterations;
+  }
+
+  get numParticles() {
+    return this._numParticles;
+  }
+
+  get particles() {
+    return this._particles;
+  }
+
+  constructor(
+    cognitiveWeight,
+    fitnessFunction,
+    inertialWeight,
+    numDimensions,
+    numIterations,
+    numParticles,
+    searchSpaceLowerBound,
+    searchSpaceUpperBound,
+    socialWeight,
+    useIntervalConfinement
+  ) {
+    this._fitnessFunction = fitnessFunction;
+    this._numIterations = numIterations;
+    this._numParticles = numParticles;
+    this._globalBest = null;
+    this._globalBests = [];
+    this._particles = [];
+
+    for (var i = 0; i < this.numParticles; i++) {
+      this._particles.push(
+        new Particle(
+          cognitiveWeight,
+          fitnessFunction,
+          inertialWeight,
+          numDimensions,
+          searchSpaceLowerBound,
+          searchSpaceUpperBound,
+          socialWeight,
+          useIntervalConfinement
+        )
+      );
+    }
+    this.particles.forEach(particle => particle.init());
+  }
+
+  findCurrentGlobalBest() {
+    return this.particles.reduce((globalBest, particle) => {
+      if (globalBest === null) {
+        globalBest = particle;
+      } else if (particle.fitness > globalBest.fitness) {
+        globalBest = particle;
+      }
+      return globalBest;
+    }, null);
+  }
+
+  optimise() {
+    for (var i = 0; i < this.numIterations; i++) {
+      this.updateGlobalBest();
+      this.particles.forEach(particle => {
+        particle.update(this.globalBest);
+      });
+
+      this.globalBests.push({
+        fitness: this.globalBest.fitness,
+        position: this.globalBest.positions,
+      });
+    }
+  }
+
+  updateGlobalBest() {
+    const currentGlobalBest = this.findCurrentGlobalBest();
+    const lastGlobalBest = this.globalBest;
+    if (lastGlobalBest === null) {
+      this._globalBest = currentGlobalBest;
+    } else if (currentGlobalBest.fitness > lastGlobalBest.fitness) {
+      this._globalBest = currentGlobalBest;
+    }
+  }
+}
+
+module.exports = Pso;

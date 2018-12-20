@@ -1,16 +1,11 @@
-const constants = require('./constants');
-
-const {
-  COGNITIVE_WEIGHT_DEFAULT,
-  NUM_DIMENSIONS_DEFAULT,
-  SOCIAL_WEIGHT_DEFAULT,
-  SQUARED_POWER,
-} = constants;
-
 class Particle
 {
-  get best() {
-    return this._best;
+  get bestFitness() {
+    return this._bestFitness;
+  }
+
+  get bestPositions() {
+    return this._bestPositions;
   }
 
   get cognitiveWeight() {
@@ -21,20 +16,12 @@ class Particle
     return this._fitness;
   }
 
-  get inertia() {
-    return this._inertia;
+  get fitnessFunction() {
+    return this._fitnessFunction;
   }
 
-  get lastPositions() {
-    return this._lastPositions;
-  }
-
-  get lastVelocities() {
-    return this._lastVelocities;
-  }
-
-  get lowerBound() {
-    return this._lowerBound;
+  get inertialWeight() {
+    return this._inertialWeight;
   }
 
   get numDimensions() {
@@ -45,144 +32,185 @@ class Particle
     return this._positions;
   }
 
+  get searchSpaceLowerBound() {
+    return this._searchSpaceLowerBound;
+  }
+
+  get searchSpaceUpperBound() {
+    return this._searchSpaceUpperBound;
+  }
+
   get socialWeight() {
     return this._socialWeight;
   }
 
-  get upperBound() {
-    return this._upperBound;
+  get useIntervalConfinement() {
+    return this._useIntervalConfinement;
   }
 
   get velocities() {
     return this._velocities;
   }
 
-  constructor(params) {
-    const {
-      cognitiveWeight = COGNITIVE_WEIGHT_DEFAULT,
-      inertia,
-      lowerBound,
-      numDimensions = NUM_DIMENSIONS_DEFAULT,
-      socialWeight = SOCIAL_WEIGHT_DEFAULT,
-      upperBound
-    } = params;
-
-    this._best = [];
-    this._cognitiveWeight = cognitiveWeight;
-    this._inertia = inertia;
-    this._lastPositions = [];
-    this._lastVelocities = [];
-    this._lowerBound = lowerBound;
+  constructor(
+    cognitiveWeight,
+    fitnessFunction,
+    inertialWeight,
+    numDimensions,
+    searchSpaceLowerBound,
+    searchSpaceUpperBound,
+    socialWeight,
+    useIntervalConfinement
+  ) {
+    this._fitnessFunction = fitnessFunction;
     this._numDimensions = numDimensions;
-    this._positions = [];
+    this._cognitiveWeight = cognitiveWeight;
+    this._inertialWeight = inertialWeight;
     this._socialWeight = socialWeight;
-    this._upperBound = upperBound;
+    this._searchSpaceLowerBound = searchSpaceLowerBound;
+    this._searchSpaceUpperBound = searchSpaceUpperBound;
+    this._useIntervalConfinement = useIntervalConfinement;
+    this._fitness = null;
+    this._bestFitness = null;
+    this._bestPositions = [];
+    this._positions = [];
     this._velocities = [];
-
-    this.init();
-    this._fitness = this.generateFitness();
   }
 
   init() {
-    let positionPerDimension;
-    let velocityPerDimension;
-
+    let positionalComponent;
+    let velocityComponent;
     for (var dimension = 0; dimension < this._numDimensions; dimension++) {
-      positionPerDimension = this.generateBoundedRandomValue();
-      velocityPerDimension = this.generateBoundedRandomValue();
-
-      this._positions.push(positionPerDimension);
-      this._best.push(positionPerDimension);
-      this._velocities.push(velocityPerDimension);
+      positionalComponent = this.generateBoundedRandomValue();
+      velocityComponent = this.generateBoundedRandomValue();
+      this._positions.push(positionalComponent);
+      this._bestPositions.push(positionalComponent);
+      this._velocities.push(velocityComponent);
     }
+    this.updateFitness();
+    this.updateBestFitness();
   }
 
   generateBoundedRandomValue(rand = Math.random) {
-    return ((rand() * (this.upperBound - this.lowerBound)) + this.lowerBound);
+    const lowerBound = this.searchSpaceLowerBound;
+    const upperBound = this.searchSpaceUpperBound;
+    return ((rand() * (upperBound - lowerBound)) + lowerBound);
   }
 
-  generateCognitiveForces(rand = Math.random) {
-    return this.positions.map((positionPerDimension, dimension) => {
-      return this.cognitiveWeight * rand() * (this.best[dimension] - positionPerDimension);
-    });
+  generateCognitiveForce() {
+    return this.generateForce(
+      this.bestPositions,
+      this.cognitiveWeight
+    );
   }
 
-  generateFitness(positions = null) {
-    const positionsLocal = positions || this._positions;
-
-    return positionsLocal.reduce((total, positionPerDimension) =>
-      total += Math.pow(positionPerDimension, SQUARED_POWER), 0);
+  generateForce(bestPositions, weight, rand = Math.random) {
+    return bestPositions.map((bp, i) => bp - this.positions[i])
+                        .map(diff => diff * weight * rand());
   }
 
-  generateSocialForces(globalBest, rand = Math.random) {
-    return this.positions.map((positionPerDimension, dimension) => {
-      return this.cognitiveWeight * rand() * (globalBest[dimension] - positionPerDimension);
-    });
+  generateForcesAndInertias(globalBestPositions) {
+    return {
+      cognitiveForces: this.generateCognitiveForce(),
+      inertias: this.generateInertias(),
+      socialForces: this.generateSocialForce(globalBestPositions),
+    };
   }
 
-  generateInertialSpeeds() {
-    return this.velocities.map(velocityPerDimension => this.inertia * velocityPerDimension);
+  generateFitness() {
+    const calculateFitness = this.fitnessFunction;
+    return this.positions.reduce((fitnessAcrossDimensions, positionalComponent) => {
+      fitnessAcrossDimensions += calculateFitness(positionalComponent);
+      return fitnessAcrossDimensions;
+    }, 0);
+  }
+
+  generateInertias() {
+    return this.velocities.map(velocity => velocity * this.inertialWeight);
+  }
+
+  generateSocialForce(globalBestPositions) {
+    return this.generateForce(
+      globalBestPositions,
+      this.socialWeight
+    );
   }
 
   update(globalBest) {
+    this.updateFitness();
+    this.updateBestFitness();
     this.updateVelocities(globalBest);
     this.updatePositions();
-    this.updateBest();
-
-    this._fitness = this.generateFitness();
   }
 
-  updateBest(bestFitness = null, currentFitness = null) {
-    const bestFitnessLocal = bestFitness || this.generateFitness(this.best);
-    const currentFitnessLocal = currentFitness || this.generateFitness(this.positions);
-
-    if (currentFitnessLocal > bestFitnessLocal) {
-      this._best = this.positions;
+  updateBestFitness() {
+    if (this.bestFitness === null) {
+      this._bestFitness = this.fitness;
+      this._bestPositions = this._positions;
+    } else if (this.fitness > this.bestFitness) {
+      this._bestFitness = this.fitness;
+      this._bestPositions = this._positions;
     }
   }
 
-  updatePosition(dimension, velocityPerDimension) {
-    const currentPositionPerDimension = this._positions[dimension];
-    const nextPositionPerDimension = currentPositionPerDimension + velocityPerDimension;
-
-    this._lastPositions[dimension] = currentPositionPerDimension;
-    this._positions[dimension] = nextPositionPerDimension;
+  updateFitness() {
+    this._fitness = this.generateFitness();
   }
 
   updatePositions() {
-    this.velocities.forEach((velocityPerDimension, dimension) =>
-      this.updatePosition(dimension, velocityPerDimension));
+    this.velocities.forEach((velocityComponent, dimension) => {
+      const currentPositionalComponent = this._positions[dimension];
+      let nextPositionalComponent = currentPositionalComponent + velocityComponent;
+
+      if (this.useIntervalConfinement) {
+        this.updateUsingIntervalConfinement(
+          nextPositionalComponent,
+          velocityComponent,
+          dimension
+        );
+      } else {
+        this._positions[dimension] = nextPositionalComponent;
+      }
+    });
   }
 
-  updateVelocity(cognitiveForce, dimension, inertialSpeed, socialForce) {
-    const currentVelocityPerDimension = this._velocities[dimension];
-    const nextVelocityPerDimension = inertialSpeed + cognitiveForce + socialForce;
-
-    this._lastVelocities = currentVelocityPerDimension;
-    this._velocities[dimension] = nextVelocityPerDimension;
-  }
-
-  updateVelocities(
-    globalBest,
-    cognitiveForces = null,
-    inertialSpeeds = null,
-    socialForces = null
+  updateUsingIntervalConfinement(
+    positionalComponent,
+    velocityComponent,
+    dimension
   ) {
-    const cognitiveForcesLocal = cognitiveForces || this.generateCognitiveForces();
-    const inertialSpeedsLocal = inertialSpeeds || this.generateInertialSpeeds();
-    const socialForcesLocal = socialForces || this.generateSocialForces(globalBest);
+    let positionalComponentLocal = positionalComponent;
+    let velocityComponentLocal = velocityComponent;
+    if (positionalComponentLocal > this.searchSpaceUpperBound) {
+      positionalComponentLocal = this.searchSpaceUpperBound;
+    }
+    if (positionalComponentLocal < this.searchSpaceLowerBound) {
+      positionalComponentLocal = this.searchSpaceLowerBound;
+    }
+    if (positionalComponentLocal !== positionalComponent) {
+      velocityComponentLocal = velocityComponent * -1;
+    }
+    this._positions[dimension] = positionalComponentLocal;
+    this._velocities[dimension] = velocityComponentLocal;
+  }
+
+  updateVelocities(globalBest) {
+    const {
+      cognitiveForces,
+      inertias,
+      socialForces
+    } = this.generateForcesAndInertias(globalBest.positions);
+    let cognitiveForce;
+    let inertia;
+    let socialForce;
 
     for (var dimension = 0; dimension < this.numDimensions; dimension++) {
-      this.updateVelocity(
-        cognitiveForcesLocal[dimension],
-        dimension,
-        inertialSpeedsLocal[dimension],
-        socialForcesLocal[dimension]
-      );
+      cognitiveForce = cognitiveForces[dimension];
+      inertia = inertias[dimension];
+      socialForce = socialForces[dimension];
+      this._velocities[dimension] = inertia + cognitiveForce + socialForce;
     }
   }
 }
 
-module.exports = {
-  Particle: Particle,
-};
+module.exports = Particle;
